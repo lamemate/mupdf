@@ -473,3 +473,34 @@ void pdf_set_free_text_details(fz_context *ctx, pdf_document *doc, pdf_annot *an
 		fz_rethrow(ctx);
 	}
 }
+
+void
+pdf_set_link_annot_uri(fz_context *ctx, pdf_document *doc, pdf_annot *annot, char* uri)
+{
+	pdf_obj *uri_dict = pdf_new_dict(ctx, doc, 0);
+	pdf_dict_puts_drop(ctx, uri_dict, "S", pdf_new_name(ctx, doc, "URI"));
+	pdf_dict_puts_drop(ctx, uri_dict, "URI", pdf_new_string(ctx, doc, uri, strlen(uri)));
+	pdf_dict_puts_drop(ctx, annot->obj, "A", uri_dict);
+}
+
+void
+pdf_set_link_annot_rect(fz_context *ctx, pdf_document *doc, pdf_annot *annot, fz_point *qp, int n)
+{
+	fz_matrix ctm;
+	pdf_obj *arr = pdf_new_array(ctx, doc, n*2);
+	int i;
+
+	fz_invert_matrix(&ctm, &annot->page->ctm);
+
+	pdf_dict_puts_drop(ctx, annot->obj, "Rect", arr);
+	for (i = 0; i < n; i++)
+	{
+		fz_point pt = qp[i];
+		pdf_obj *r;
+		fz_transform_point(&pt, &ctm);
+		r = pdf_new_real(ctx, doc, pt.x);
+		pdf_array_push_drop(ctx, arr, r);
+		r = pdf_new_real(ctx, doc, pt.y);
+		pdf_array_push_drop(ctx, arr, r);
+	}
+}

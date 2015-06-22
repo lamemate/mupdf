@@ -2675,3 +2675,74 @@ JNI_FN(MuPDFCore_abortCookie)(JNIEnv * env, jobject thiz, jlong cookiePtr)
 	if (cookie != NULL)
 		cookie->abort = 1;
 }
+
+JNIEXPORT void JNICALL
+JNI_FN(MuPDFCore_addLinkAnnotationInternal)(JNIEnv * env, jobject thiz, jobjectArray points, jstring uristring)
+{
+	globals *glo = get_globals(env, thiz);
+	fz_context *ctx = glo->ctx;
+	fz_document *doc = glo->doc;
+	pdf_document *idoc = pdf_specifics(ctx, doc);
+	page_cache *pc = &glo->pages[glo->current];
+	jclass pt_cls;
+	jfieldID x_fid, y_fid;
+	int i, n;
+	fz_point *pts = NULL;
+	fz_annot_type type = FZ_ANNOT_LINK;
+	const char* uri;
+
+	if(idoc == NULL)
+	{
+		return;
+	}
+
+	fz_var(pts);
+	fz_try(ctx)
+	{
+		fz_annot *annot;
+		fz_matrix ctm;
+
+		float zoom = glo->resolution / 72;
+		zoom = 1.0 / zoom;
+		fz_scale(&ctm, zoom, zoom);
+		pt_cls = (*env)->FindClass(env, "android.graphics.PointF");
+		if (pt_cls == NULL) fz_throw(ctx, FZ_ERROR_GENERIC, "FindClass");
+		x_fid = (*env)->GetFieldID(env, pt_cls, "x", "F");
+		if (x_fid == NULL) fz_throw(ctx, FZ_ERROR_GENERIC, "GetFieldID(x)");
+		y_fid = (*env)->GetFieldID(env, pt_cls, "y", "F");
+		if (y_fid == NULL) fz_throw(ctx, FZ_ERROR_GENERIC, "GetFieldID(y)");
+
+		n = (*env)->GetArrayLength(env, points);
+		uri = (*env)->GetStringUTFChars(env, uristring, 0);
+
+		pts = fz_malloc_array(ctx, n, sizeof(fz_point));
+
+		for (i = 0; i < n; i++)
+		{
+			jobject opt = (*env)->GetObjectArrayElement(env, points, i);
+			pts[i].x = opt ? (*env)->GetFloatField(env, opt, x_fid) : 0.0f;
+			pts[i].y = opt ? (*env)->GetFloatField(env, opt, y_fid) : 0.0f;
+			fz_transform_point(&pts[i], &ctm);
+		}
+
+		annot = (fz_annot *)pdf_create_annot(ctx, idoc, (pdf_page *)pc->page, type);
+
+		pdf_set_link_annot_uri(ctx, idoc, (pdf_annot *) annot, uri);
+		pdf_set_link_annot_rect(ctx, idoc, (pdf_annot *)annot, pts, n);
+
+		dump_annotation_display_lists(glo);
+		(*env)->ReleaseStringUTFChars(env, uristring, uri);
+	}
+	fz_always(ctx)
+	{
+		fz_free(ctx, pts);
+	}
+	fz_catch(ctx)
+	{
+		LOGE("addLinkAnnotation: %s failed", ctx->error->message);
+		jclass cls = (*env)->FindClass(env, "java/lang/OutOfMemoryError");
+		if (cls != NULL)
+			(*env)->ThrowNew(env, cls, "Out of memory in MuPDFCore_searchPage");
+		(*env)->DeleteLocalRef(env, cls);
+	}
+}
